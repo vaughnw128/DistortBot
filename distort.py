@@ -1,79 +1,127 @@
+# Distort Bot
+# Distorts images and gifs in discord
+# Made by Vaughn Woerpel
 import discord, logging, json
 from discord.ext import commands
-from config import token, guild
+from config import token, apikey, guild
 from wand.image import Image
+from discord import app_commands
+from discord.ext import commands
 import urllib
 import requests
 import os
+from os import sys
 import imghdr
+import validators
+import ffmpy
+from clint.textui import progress
+import urllib 
+import re
 
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix='$', intents=intents)
+MY_GUILD = discord.Object(id=int(guild))
 
-logging.basicConfig(level=logging.WARNING)
-
-image_types = ["png", "jpeg", "gif", "jpg"]
-
-async def image_handler(ctx, img):
-	if img is not None:
-		try:
-			response = requests.get(img)
-			fname = requests.utils.urlparse(img)
-			fname=os.path.basename(fname.path)
-			print(fname)
-			req = urllib.request.Request(img, headers={'User-Agent': 'Mozilla/5.0'})
-			with open(fname, "wb") as f:
-				with urllib.request.urlopen(req) as r:
-					f.write(r.read())
-		except requests.ConnectionError as exception:
-			await ctx.channel.send("You have entered an invalid URL")
-			return None
-		except requests.HTTPError as exception:
-			await ctx.channel.send("You have entered an invalid URL")
-			return None
+# Method used to grab images from messages. It can grab images from embeds, and normal message attachments. Grabs and validates the links.
+async def grab_img(message):
+	# Valid image types
+	types = ["png", "jpg", "jpeg", "gif", "mp4"]
+	url = ""
+	# Gets the image URL using various means
+	# First checks the embed class
+	if message.embeds:
+		# Checks if the embed itself is an image and grabs the url
+		if message.embeds[0].url is not None:
+			url = message.embeds[0].url
+		# Checks if the embed is a video (tenor gif) and grabs the url
+		elif message.embeds[0].video.url is not None:
+			url = message.embeds[0].video.url
+	# Checks to see if the image is a message attachment
+	elif message.attachments:
+		url = message.attachments[0].url
+	# Validates the URLs
 	else:
-		if ctx.message.attachments:
-			for attachment in ctx.message.attachments:
-				if any(attachment.filename.lower().endswith(image) for image in image_types):
-					await attachment.save(attachment.filename)
-					fname=str(attachment.filename)
+		for item in message.content.split(' '):
+			if validators.url(item):
+				url = item
+	# Remove the trailing modifiers at the end of the link
+	url = url.partition("?")[0]
+	# Passes off tenor gif
+	if "tenor" in url:
+		q = url.split("/")[len(url.split("/"))-1]
+		# Returns as a dict
+		resp = requests.get(f"https://tenor.googleapis.com/v2/search?key={apikey}&q={q}&limit=1")
+		data = resp.json()
+
+		url = data['results'][0]['media_formats']['mediumgif']['url']
+	# Quickly check the filetype of the URL
+	if not url.endswith(tuple(types)):
+		return None
+	# We can proceed as long as it is a valid URL
+	if validators.url(url):
+		fname = requests.utils.urlparse(url)
+		fname = f"images/{os.path.basename(fname.path)}"
+		req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+		with open(fname, "wb") as f:
+			with urllib.request.urlopen(req) as r:
+				f.write(r.read())
+		
+		# Handling the tenor mp4s
+		# if fname.endswith(".mp4"):
+		# 	ff = ffmpy.FFmpeg(
+		# 		inputs = {fname: None},
+		# 		outputs = {fname.replace("mp4", "gif"): None}
+		# 	)
+		# 	ff.run()
+		# 	os.remove(fname)
+		# 	fname = fname.replace("mp4", "gif")
+		
+		return fname
+
+# Defining the distortclient class with all of the command trees		
+class DistortClient(discord.Client):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.tree = app_commands.CommandTree(self)
+
+	async def setup_hook(self) -> None:
+		self.tree.copy_global_to(guild=MY_GUILD)
+		await self.tree.sync(guild=MY_GUILD)
+
+	async def on_ready(self):
+		print('Bot ready!')
+		print(self.user.name)
+		print('------------')
+
+# Defines the client and the client intents
+intents = discord.Intents.default()
+intents.message_content = True
+client = DistortClient(intents=intents)
+
+# Checking to see if online through pinpong command
+@client.tree.command()
+async def ping(interaction: discord.Interaction):
+    await interaction.response.send_message("Pong!")
+
+# Context tree command for the distort command.
+@client.tree.context_menu(name = "Distort", guild = MY_GUILD)
+async def distort_context_menu(interaction: discord.Interaction, message: discord.Message):
+	fname = await grab_img(message) # Grabs the image
+	print(fname)
+	if fname is not None:
+		# Handles distorting the gif
+		if fname.endswith('gif'):
+			with Image(filename=fname) as temp_img:
+				with Image(width=round(temp_img.width*.60), height=round(temp_img.height*.60)) as new:
+					for _, frame in enumerate(temp_img.sequence):
+						frame.liquid_rescale(round(temp_img.width*.60), round(temp_img.height*.60))
+						new.sequence.append(frame)
+					#new.type = 'optimize'
+					new.save(filename=fname)
+					await interaction.response.send_message(file=discord.File(fname))
+		# Handles distorting the photo
 		else:
-			await ctx.channel.send("Please attach an image")
-			return None
+			with Image(filename=fname) as temp_img:
+				temp_img.liquid_rescale(round(temp_img.width*.60), round(temp_img.height*.60))
+				temp_img.save(filename=fname)
+				await interaction.response.send_message(file=discord.File(fname))
 
-	return fname
-
-@bot.event
-async def on_ready():
-    print('Bot is ready for use')
-
-@bot.command(name="distort", pass_context=True)
-async def distort(ctx, img: str=None):
-	fname = await image_handler(ctx,img)
-	await ctx.message.delete()
-	
-	if(imghdr.what(fname)=='gif'):
-		with Image(filename=fname) as img:
-			with Image(width=round(img.width*.60), height=round(img.height*.60)) as new:
-				for _, frame in enumerate(img.sequence):
-					frame.liquid_rescale(round(img.width*.60), round(img.height*.60))
-					new.sequence.append(frame)
-				#for cursor in range(len(new.sequence)):
-				#	with new.sequence[cursor] as frame:
-				#		frame.delay = 10 * (cursor + 1)
-				for _, frame in enumerate(img.sequence):
-					print(frame)
-
-				new.type = 'optimize'
-				new.save(filename=fname)
-				await ctx.send(file=discord.File(fname))
-
-	else:
-		with Image(filename=fname) as img:
-			img.liquid_rescale(round(img.width*.60), round(img.height*.60))
-			img.save(filename=fname)
-			await ctx.send(file=discord.File(fname))
-	
-
-if __name__ == '__main__':
-	bot.run(token)
+client.run(token)
