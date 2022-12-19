@@ -1,22 +1,14 @@
 # Distort Bot
 # Distorts images and gifs in discord
 # Made by Vaughn Woerpel
-import discord, logging, json
-from discord.ext import commands
+import discord
 from config import token, apikey, guild
 from wand.image import Image
 from discord import app_commands
-from discord.ext import commands
 import urllib
 import requests
 import os
-from os import sys
-import imghdr
 import validators
-import ffmpy
-from clint.textui import progress
-import urllib 
-import re
 
 MY_GUILD = discord.Object(id=int(guild))
 
@@ -63,16 +55,6 @@ async def grab_img(message):
 		with open(fname, "wb") as f:
 			with urllib.request.urlopen(req) as r:
 				f.write(r.read())
-		
-		# Handling the tenor mp4s
-		# if fname.endswith(".mp4"):
-		# 	ff = ffmpy.FFmpeg(
-		# 		inputs = {fname: None},
-		# 		outputs = {fname.replace("mp4", "gif"): None}
-		# 	)
-		# 	ff.run()
-		# 	os.remove(fname)
-		# 	fname = fname.replace("mp4", "gif")
 		
 		return fname
 
