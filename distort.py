@@ -55,7 +55,6 @@ async def grab_img(message):
 		with open(fname, "wb") as f:
 			with urllib.request.urlopen(req) as r:
 				f.write(r.read())
-		
 		return fname
 
 async def distort(fname):
@@ -63,9 +62,9 @@ async def distort(fname):
 		# Handles distorting the gif
 		if fname.endswith('gif'):
 			with Image(filename=fname) as temp_img:
-				with Image(width=round(temp_img.width*.60), height=round(temp_img.height*.60)) as new:
+				with Image(width=round(temp_img.width*.80), height=round(temp_img.height*.80)) as new:
 					for _, frame in enumerate(temp_img.sequence):
-						frame.liquid_rescale(round(temp_img.width*.60), round(temp_img.height*.60))
+						frame.liquid_rescale(round(temp_img.width*.80), round(temp_img.height*.80))
 						new.sequence.append(frame)
 					new.type = 'optimize'
 					new.save(filename=fname)
@@ -73,7 +72,7 @@ async def distort(fname):
 		# Handles distorting the photo
 		else:
 			with Image(filename=fname) as temp_img:
-				temp_img.liquid_rescale(round(temp_img.width*.60), round(temp_img.height*.60))
+				temp_img.liquid_rescale(round(temp_img.width*.80), round(temp_img.height*.80))
 				temp_img.save(filename=fname)
 				return fname
 
@@ -94,12 +93,21 @@ class DistortClient(discord.Client):
 
 # View setup for the buttons
 class DistortView(discord.ui.View):
+	# def __init__(self, *args, **kwargs):
+	# 	super().__init__(*args, **kwargs)
+	# 	self.distort_list = []
+
 	@discord.ui.button(label="Distort", style=discord.ButtonStyle.green)
 	async def distort_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+		#self.distort_list.append(interaction.message.attachments[0])
 		fname = await grab_img(interaction.message)
 		distorted = await distort(fname)
 		await interaction.message.edit(attachments=[discord.File(distorted)])
 		await interaction.response.defer()
+
+	# @discord.ui.button(label="Less Distort", style=discord.ButtonStyle.green)
+	# async def less_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+	# 	await interaction.message.edit
 
 # Defines the client and the client intents
 intents = discord.Intents.default()
